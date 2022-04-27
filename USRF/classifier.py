@@ -1,6 +1,9 @@
 import cv2
 import numpy as np
 from typing import List
+from sklearn.neighbors import NearestNeighbors
+from sklearn.ensemble import RandomForestClassifier
+
 
 class CropData:
     class AxisData:
@@ -13,8 +16,8 @@ class CropData:
             x = self.AxisData(int(x - width/2.0), int(x + width/2.0))
             y = self.AxisData(int(y - height/2.0), int(y + height/2.0))
         else:
-            x = self.AxisData(x, width)
-            y = self.AxisData(y, height)
+            x = self.AxisData(x, x + width)
+            y = self.AxisData(y, y + height)
 
         self.x = x
         self.y = y
@@ -39,6 +42,7 @@ class USRFClf:
         self._object_size = object_size
         self._object = None
         self._verbose = verbose
+        self._rough_tracker = None
         
     def _crop_img(self, frame, crop_data):
         return frame[crop_data.y.start:crop_data.y.end, crop_data.x.start:crop_data.x.end]
@@ -57,7 +61,7 @@ class USRFClf:
                                                       self._object_size.width, self._object_size.height,
                                                       is_center_point))
         if self._verbose:
-            self._show_cur_roi(self._object, 1000, False)
+            self._show_cur_roi(self._object, non_destroying=False)
 
     def _fine_tracking(self, frame):
         highscore = -1
@@ -94,7 +98,7 @@ class USRFClf:
         if not non_destroying:
             cv2.destroyAllWindows()
 
-    def _show_frame_and_estimate(self, frame, ground_truth = None, window_timeout  = 50, non_destroying = True):
+    def _show_frame_and_estimate(self, frame, ground_truth = None, window_timeout  = 50, non_destroying = True, roi_border_thickness = 1, roi_border_color = (200, 200, 200)):
 
         def _add_cross(frame, pos, color, thickness = 2, scaling = 1.0, alpha = 0.5):
             marker_img = frame.copy()
@@ -113,9 +117,14 @@ class USRFClf:
                                                  self._object_size.width,
                                                  self._object_size.height,
                                                  True))
+        # cur state
         frame[0:self._object.shape[0], 0:self._object.shape[1]] = roi_img
+        # init state
         frame[self._object.shape[0]:self._object.shape[0] * 2,
                                  0 :self._object.shape[1] ] = self._object
+        # extraction windows
+        for roi in self._regions_of_interest:
+            frame = cv2.rectangle(frame, (roi.x.start, roi.y.start), (roi.x.end, roi.y.end), roi_border_color, roi_border_thickness)
 
         window_title = "Frame and algo estimate"
         # set labels
@@ -144,10 +153,16 @@ class USRFClf:
 
         if len(self._training_data) < self._n_training_frames + 100:    
             patches = self._extract_patches(frame)
-            coordinates = self._neighborhood_search(frame)
-            self._training_data.append([patches, coordinates])
             self._fine_tracking(frame)
+            self._training_data.append([patches, self._past_position])
             self._show_frame_and_estimate(frame, ground_truth=annotation)
-
+        elif self._rough_tracker is None:
+            self._rough_tracker = RandomForestClassifier()
+            training_data = np.array(self._training_data)
+            X = training_data[:, 1]
+            y = training_data[:, 0]
+            knn = NearestNeighbors(n_neighbors=5).fit(X)
+            print(knn.kneighbors(X))
+            self._rough_tracker.fit(self._training_data[:,0], self._training_data[:,1])
         else:
             pass

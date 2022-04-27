@@ -13,7 +13,9 @@ def main():
 
     frame, annotation = data_handler.next_data()
 
-    regions_of_interest = [CropData(60, 120, 30, 30), CropData(120, 120, 30, 30)]
+    regions_of_interest = [CropData(60, 120, 30, 30), 
+                           CropData(180, 120, 30, 30),
+                           CropData(300, 190, 30, 30)]
     algo = USRFClf(initial_position=[annotation["x"], annotation["y"]],
                    regions_of_interest=regions_of_interest,
                    verbose = True)
